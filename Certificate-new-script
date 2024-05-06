@@ -1,0 +1,86 @@
+#!/bin/bash -x
+# Script to generate SSL certificates for domains in batches of 50 every 30 minutes.
+INPUT_CSV="differences.txt" # CSV file with domain names
+PROCESSED_DOMAINS="processed_domains.txt" # File with domains processed by the Nginx config script
+EMAIL_PREFIX="devops+"
+EMAIL_DOMAIN="@broadlume.com"
+BATCH_SIZE=50
+SLEEP_TIME=1800 # 30 minutes in seconds
+CONFIG_FOLDER="/var/www/certificates" # Configuration folder for certbot
+WEBROOT_PATH="/var/www/html" # Webroot path
+NGINX_CONF_DIR="/etc/nginx/sites" # Nginx configuration directory
+if [ ! -d "$CONFIG_FOLDER" ]; then
+  mkdir -p "$CONFIG_FOLDER"
+fi
+# Function to process a batch of domains
+process_batch() {
+  local domains=("$@")
+  local email_suffix=$(date +%s) # Unique email suffix based on timestamp
+  local email="${EMAIL_PREFIX}${email_suffix}${EMAIL_DOMAIN}"
+  for domain in "${domains[@]}"; do
+    echo "Processing $domain..."
+    if certbot certonly --webroot -w "$WEBROOT_PATH/$domain" -d "$domain" -n --email "$email" --agree-tos --expand \
+      --config-dir "$CONFIG_FOLDER" --work-dir "$CONFIG_FOLDER" --logs-dir "$CONFIG_FOLDER" \
+      && update_nginx_conf "$domain"; then
+      echo "$domain" >> ssls_generated_domains.txt
+    else
+      echo "$domain: SSL certificate creation failed or domain validation failed."
+      echo "$domain" >> remaining_domains.txt
+    fi
+  done
+}# Function to update Nginx configuration with SSL details
+update_nginx_conf() {
+  local domain=$1
+  local conf_file="$NGINX_CONF_DIR/$domain.conf"
+  local ssl_block_exists=$(grep -c "listen 443 ssl;" "$conf_file")
+  if [ -f "$conf_file" ]; then
+    echo "Updating Nginx configuration for $domain..."
+    # Add SSL configuration if it doesn't exist
+    if [ "$ssl_block_exists" -eq 0 ]; then
+      cat << EOF >> "$conf_file"
+    server {
+        listen 443 ssl;
+        root $WEBROOT_PATH/$domain;
+        server_name $domain;
+        location ^~ /.well-known/acme-challenge/ {
+            root $WEBROOT_PATH/$domain;
+        }
+        location / {
+            return 301 https://www.\$host\$request_uri;
+        }
+        ssl_certificate $CONFIG_FOLDER/live/$domain/fullchain.pem;
+        ssl_certificate_key $CONFIG_FOLDER/live/$domain/privkey.pem;
+    }
+EOF
+    else
+      # Update existing SSL block
+      sed -i "/listen 443 ssl;/a \ \ \ \ ssl_certificate $CONFIG_FOLDER/live/$domain/fullchain.pem;\n \ \ \ \ ssl_certificate_key $CONFIG_FOLDER/live/$domain/privkey.pem;" "$conf_file"
+    fi}
+disable_redirection() {
+  for domain in "$@"; do
+    local conf_file="$NGINX_CONF_DIR/$domain.conf"
+    if [ -f "$conf_file" ]; then
+      # Comment out the 301 redirection line
+      sed -i '/return 301 https:\/\/www.\$host\$request_uri/s/^/#/' "$conf_file"
+    fi
+  done
+  # Reload Nginx to apply changes
+  nginx -t && systemctl reload nginx || echo "Failed to reload Nginx"
+}
+# Function to revert the temporary disabling of 301 redirection
+revert_redirection_changes() {
+  for domain in "$@"; do
+    local conf_file="$NGINX_CONF_DIR/$domain.conf"
+    if [ -f "$conf_file" ]; then
+      # Uncomment the 301 redirection line
+      sed -i '/return 301 https:\/\/www.\$host\$request_uri/s/^#//' "$conf_file"
+    fi
+  done
+  # Reload Nginx to apply changes
+  nginx -t && systemctl reload nginx || echo "Failed to reload Nginx"
+}
+# Main loop to process domains in batches
+is_domain_processed() {
+  local domain=$1
+  grep -Fxq "$domain" ssls_generated_domains.txt
+} - for generating ssl certificates pointing to aws nlb
