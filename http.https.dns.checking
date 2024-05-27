@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Define the path to the CSV file
+CSV_FILE="websites.csv"
+
+# Check if the CSV file exists
+if [[ ! -f "$CSV_FILE" ]]; then
+    echo "CSV file not found: $CSV_FILE"
+    exit 1
+fi
+
+# Read the CSV file line by line
+while IFS=, read -r dns
+do
+    # Remove leading and trailing whitespaces (if any)
+    dns=$(echo "$dns" | xargs)
+
+    # Add www. prefix once
+    dns_with_www="www.$dns"
+
+    # Perform curl operation on the DNS entry
+    echo "Curling http://$dns"
+    curl -I "http://$dns" # Change to desired curl options
+
+    echo "Curling https://$dns"
+    curl -I "https://$dns" # Change to desired curl options
+
+    # Curling with www. prefix
+    echo "Curling http://$dns_with_www"
+    curl -I "http://$dns_with_www" # Change to desired curl options
+
+    echo "Curling https://$dns_with_www"
+    curl -I "https://$dns_with_www" # Change to desired curl options
+
+done < "$CSV_FILE"
+
+echo "All DNS entries have been processed."
