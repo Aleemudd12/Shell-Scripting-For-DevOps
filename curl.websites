@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Define the path to the CSV file
+CSV_FILE="websites.csv"
+
+# Check if the CSV file exists
+if [[ ! -f "$CSV_FILE" ]]; then
+    echo "CSV file not found: $CSV_FILE"
+    exit 1
+fi
+
+# Read the CSV file line by line
+while IFS=, read -r dns
+do
+    # Perform curl operation on the DNS entry
+    echo "Curling $dns"
+    curl -I "$dns" # Change to desired curl options
+done < "$CSV_FILE"
+
+echo "All DNS entries have been processed."
