@@ -15,38 +15,40 @@ echo "Response saved to $OUTPUT_FILE in the desired format."
 FILE1="getclienturls"
 LOGFILE="newdomains.txt"
 
-# Ensure file2.txt exists
-touch $LOGFILE
+# Ensure LOGFILE exists
+touch "$LOGFILE"
 
-# Read existing domains into an array
-if [ -f "$LOGFILE" ]; then
-  readarray -t existing_domains < "$LOGFILE"
-else
-  existing_domains=()
-fi
+# Create a new file with current date and timestamp for new domains
+TIMESTAMP=$(date "+%Y%m%d_%H%M%S")
+NEW_DOMAINS_FILE="new_domains_${TIMESTAMP}.txt"
 
-# Function to check if a domain is in the array
+# Function to check if a domain is in the file
 domain_exists() {
-  local domain="$1"
-  for d in "${existing_domains[@]}"; do
-    if [ "$d" == "$domain" ]; then
-      return 0
-    fi
-  done
-  return 1
+    grep -Fxq "$1" "$LOGFILE"
 }
 
-# Process the domains in file1.txt
-while IFS= read -r domain; do
-  # Remove 'www.' prefix if present
-  cleaned_domain=$(echo "$domain" | sed 's/^www\.//')
+# Variable to track if any new domains were found
+new_domains_found=false
 
-  # Check if the cleaned domain already exists in file2.txt
-  if ! domain_exists "$cleaned_domain"; then
-    echo "New domain found: $cleaned_domain"
-    echo "$cleaned_domain" >> "$LOGFILE"
-    existing_domains+=("$cleaned_domain")
-  fi
+# Process the domains in FILE1
+while IFS= read -r domain; do
+    # Remove 'www.' prefix if present
+    cleaned_domain=$(echo "$domain" | sed 's/^www\.//')
+
+    # Check if the cleaned domain already exists in LOGFILE
+    if ! domain_exists "$cleaned_domain"; then
+        echo "New domain found: $cleaned_domain"
+        echo "$cleaned_domain" >> "$LOGFILE"
+        echo "$cleaned_domain" >> "$NEW_DOMAINS_FILE"
+        new_domains_found=true
+    fi
 done < "$FILE1"
+
+if [ "$new_domains_found" = true ]; then
+    echo "New domains have been added to $NEW_DOMAINS_FILE"
+else
+    echo "No new domains found."
+    rm "$NEW_DOMAINS_FILE"  # Remove the empty file if no new domains were found
+fi
 
 echo "Processing complete."
